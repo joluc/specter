@@ -47,12 +47,14 @@ import (
 	// This ensures the operator can authenticate with any Kubernetes cluster.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	"github.com/go-logr/logr"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -187,6 +189,10 @@ func main() {
 
 	logger := setupLogger(logLevel, logFormat)
 	slog.SetDefault(logger)
+
+	// Set controller-runtime logger to use our slog logger.
+	ctrl.SetLogger(logr.FromSlogHandler(logger.Handler()))
+	log.SetLogger(logr.FromSlogHandler(logger.Handler()))
 
 	// Log startup information.
 	logger.Info("Starting Specter operator",

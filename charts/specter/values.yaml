@@ -1,9 +1,8 @@
 # Default values for specter
-# This is a YAML-formatted file.
 
 # Image configuration
 image:
-  repository: joluc/specter
+  repository: ghcr.io/joluc/specter
   tag: ""  # Defaults to appVersion
   pullPolicy: IfNotPresent
 
