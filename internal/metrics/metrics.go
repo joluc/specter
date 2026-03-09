@@ -15,36 +15,16 @@ limitations under the License.
 */
 
 // Package metrics exposes Prometheus metrics for monitoring Specter itself.
-//
-// LEARNING NOTE: "Eating your own dog food" - since Specter is a tool for
-// improving observability of Prometheus alerts, it makes sense that Specter
-// itself exposes Prometheus metrics. This allows you to:
-//
-//   1. Alert on Specter failures (meta-alerting!)
-//   2. Track how many PrometheusRules have been processed
-//   3. Monitor template rendering errors
-//   4. Observe reconciliation performance
-//
-// METRIC NAMING CONVENTIONS (Prometheus best practices):
-//   - specter_ prefix for all our metrics (namespace)
-//   - _total suffix for counters
-//   - _seconds suffix for durations
-//   - _info suffix for informational gauges with labels
-//   - Use lowercase with underscores
-//
-// METRIC TYPES:
-//   - Counter: Only goes up (e.g., total requests processed)
-//   - Gauge: Can go up or down (e.g., current queue size)
-//   - Histogram: Distribution of values (e.g., request latency)
-//   - Summary: Like histogram but calculates percentiles client-side
-//
-// We use Histograms for latencies because they allow server-side percentile
-// calculation and are more memory-efficient for high-cardinality labels.
 package metrics
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+const (
+	resultSuccess = "success"
+	resultError   = "error"
 )
 
 // =============================================================================
@@ -317,9 +297,9 @@ var (
 //	err := reconcileRule(rule)
 //	metrics.RecordReconcile(rule.Namespace, err, time.Since(start).Seconds())
 func RecordReconcile(namespace string, err error, durationSeconds float64) {
-	result := "success"
+	result := resultSuccess
 	if err != nil {
-		result = "error"
+		result = resultError
 	}
 
 	ReconcileTotal.WithLabelValues(result, namespace).Inc()
@@ -327,14 +307,10 @@ func RecordReconcile(namespace string, err error, durationSeconds float64) {
 }
 
 // RecordTemplateRender records a template render attempt.
-//
-// Parameters:
-//   - templateName: Name of the template (e.g., "logs", "traces")
-//   - err: The error (nil for success)
 func RecordTemplateRender(templateName string, err error) {
-	result := "success"
+	result := resultSuccess
 	if err != nil {
-		result = "error"
+		result = resultError
 	}
 	TemplateRenderTotal.WithLabelValues(templateName, result).Inc()
 }
@@ -371,9 +347,9 @@ func RecordShortenerOperation(operation string) {
 //   - scope: "cluster" or "namespace"
 //   - err: The error (nil for success)
 func RecordConfigReload(scope string, err error) {
-	result := "success"
+	result := resultSuccess
 	if err != nil {
-		result = "error"
+		result = resultError
 	}
 	ConfigReloadsTotal.WithLabelValues(result, scope).Inc()
 }

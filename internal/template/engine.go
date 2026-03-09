@@ -103,12 +103,13 @@ func NewEngine(logger *slog.Logger) *Engine {
 //
 // LEARNING NOTE: Template functions use a "pipeline" syntax similar to Unix pipes.
 // {{.service | urlEncode | upper}} means:
-//   1. Get the value of .service
-//   2. Pass it to urlEncode
-//   3. Pass the result to upper
+//  1. Get the value of .service
+//  2. Pass it to urlEncode
+//  3. Pass the result to upper
 //
 // Function arguments come BEFORE the piped value when using pipes:
-//   {{.service | replace "-" "_"}}  is equivalent to  replace("-", "_", .service)
+//
+//	{{.service | replace "-" "_"}}  is equivalent to  replace("-", "_", .service)
 func createFuncMap() template.FuncMap {
 	return template.FuncMap{
 		// =====================================================================
@@ -381,19 +382,19 @@ func createFuncMap() template.FuncMap {
 				switch val := v.(type) {
 				case string:
 					if val != "" {
-					return val
-				}
-			case nil:
-				continue
-			default:
-				s := fmt.Sprintf("%v", val)
-				if s != "" && s != "<no value>" {
-					return s
+						return val
+					}
+				case nil:
+					continue
+				default:
+					s := fmt.Sprintf("%v", val)
+					if s != "" && s != "<no value>" {
+						return s
+					}
 				}
 			}
-		}
-		return ""
-	},
+			return ""
+		},
 
 		// ternary returns trueVal if condition is true, otherwise falseVal.
 		//

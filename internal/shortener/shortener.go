@@ -22,16 +22,16 @@ limitations under the License.
 // encode complex queries directly in the URL (using RISON or base64 encoding).
 // These URLs can be 1000+ characters, which causes problems:
 //
-//   1. Slack truncates long URLs, breaking the links entirely
-//   2. Some notification systems (SMS, certain chat systems) have URL length limits
-//   3. Long URLs are impossible to share verbally or copy manually
-//   4. They make alert notifications harder to read
+//  1. Slack truncates long URLs, breaking the links entirely
+//  2. Some notification systems (SMS, certain chat systems) have URL length limits
+//  3. Long URLs are impossible to share verbally or copy manually
+//  4. They make alert notifications harder to read
 //
 // THE SOLUTION:
 // Instead of embedding the full URL in the alert annotation, we:
-//   1. Store the full URL in memory with a short ID
-//   2. Return a short redirect URL like: https://specter.company.io/s/abc123
-//   3. When someone clicks it, Specter looks up the original URL and redirects
+//  1. Store the full URL in memory with a short ID
+//  2. Return a short redirect URL like: https://specter.company.io/s/abc123
+//  3. When someone clicks it, Specter looks up the original URL and redirects
 //
 // ARCHITECTURE:
 //   - Store: In-memory storage mapping short IDs to full URLs (with expiration)

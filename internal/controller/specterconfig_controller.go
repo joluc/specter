@@ -19,10 +19,10 @@ limitations under the License.
 // LEARNING NOTE: Controllers are the heart of Kubernetes operators. They implement
 // the "reconciliation loop" pattern:
 //
-//   1. WATCH: Observe changes to resources (PrometheusRules, SpecterConfigs)
-//   2. COMPARE: Determine what needs to change (are annotations missing?)
-//   3. ACT: Make changes to reach desired state (add annotations)
-//   4. REPEAT: Controller-runtime handles requeueing automatically
+//  1. WATCH: Observe changes to resources (PrometheusRules, SpecterConfigs)
+//  2. COMPARE: Determine what needs to change (are annotations missing?)
+//  3. ACT: Make changes to reach desired state (add annotations)
+//  4. REPEAT: Controller-runtime handles requeueing automatically
 //
 // This is the "Level-Triggered" or "Declarative" model:
 //   - You don't react to individual events (create, update, delete)
@@ -94,23 +94,13 @@ import (
 const (
 	// LabelEnabled is the label that must be present on PrometheusRules
 	// for Specter to process them. This is an opt-in mechanism.
-	//
-	// Example:
-	//   metadata:
-	//     labels:
-	//       specter.joluc.de/enabled: "true"
 	LabelEnabled = "specter.joluc.de/enabled"
 
 	// LabelSkip is a label that can be added to individual alerts within
 	// a PrometheusRule to skip Specter processing for that alert.
-	//
-	// Example (in alert labels):
-	//   labels:
-	//     specter.joluc.de/skip: "true"
 	LabelSkip = "specter.joluc.de/skip"
 
 	// AnnotationPrefix is the prefix for all Specter-generated annotations.
-	// Generated annotations look like: specter.joluc.de/logs, specter.joluc.de/traces
 	AnnotationPrefix = "specter.joluc.de/"
 
 	// AnnotationLastReconciled records when Specter last processed this rule.
@@ -121,6 +111,9 @@ const (
 
 	// DefaultClusterConfigName is the expected name for the cluster-wide config.
 	DefaultClusterConfigName = "global"
+
+	// LabelValueTrue is the string "true" used for label comparisons.
+	LabelValueTrue = "true"
 )
 
 // =============================================================================
@@ -235,15 +228,15 @@ func (r *SpecterConfigReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 // validateTemplates checks all templates in a SpecterConfig for syntax errors.
 func (r *SpecterConfigReconciler) validateTemplates(config *configv1alpha1.SpecterConfig) []string {
-	var errors []string
+	var validationErrs []string
 
 	for name, tmpl := range config.Spec.Templates {
 		if err := r.TemplateEngine.Validate(tmpl.URL); err != nil {
-			errors = append(errors, fmt.Sprintf("template %q: %v", name, err))
+			validationErrs = append(validationErrs, fmt.Sprintf("template %q: %v", name, err))
 		}
 	}
 
-	return errors
+	return validationErrs
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -326,12 +319,7 @@ func (r *PrometheusRuleReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// Process the rule and inject annotations.
-	modified, alertCount, err := r.processRule(ctx, &rule, config)
-	if err != nil {
-		logger.Error("failed to process PrometheusRule", slog.String("error", err.Error()))
-		metrics.RecordReconcile(req.Namespace, err, time.Since(start).Seconds())
-		return ctrl.Result{}, err
-	}
+	modified, alertCount := r.processRule(&rule, config)
 
 	// If we made changes, update the rule.
 	if modified {
@@ -368,7 +356,7 @@ func isSpecterEnabled(rule *monitoringv1.PrometheusRule) bool {
 	if rule.Labels == nil {
 		return false
 	}
-	return rule.Labels[LabelEnabled] == "true"
+	return rule.Labels[LabelEnabled] == LabelValueTrue
 }
 
 // findConfig finds the applicable SpecterConfig for a namespace.
@@ -415,10 +403,9 @@ func (r *PrometheusRuleReconciler) findConfig(ctx context.Context, namespace str
 // processRule processes a PrometheusRule and injects annotations into its alerts.
 // Returns whether the rule was modified and the number of alerts processed.
 func (r *PrometheusRuleReconciler) processRule(
-	ctx context.Context,
 	rule *monitoringv1.PrometheusRule,
 	config *configv1alpha1.SpecterConfig,
-) (modified bool, alertCount int, err error) {
+) (modified bool, alertCount int) {
 
 	logger := r.Logger.With(
 		slog.String("rule", rule.Name),
@@ -444,18 +431,18 @@ func (r *PrometheusRuleReconciler) processRule(
 			}
 
 			// Build the context (labels) for template rendering.
-			context := buildAlertContext(alert, rule, config.Spec.DefaultLabels)
+			alertCtx := buildAlertContext(alert, rule, config.Spec.DefaultLabels)
 
 			// Get applicable templates for this alert.
 			severity := ""
 			if alert.Labels != nil {
 				severity = alert.Labels["severity"]
 			}
-			templates := config.Spec.ApplicableTemplates(severity, context)
+			templates := config.Spec.ApplicableTemplates(severity, alertCtx)
 
 			// Render each template and add to annotations.
 			for templateName, templateConfig := range templates {
-				url, err := r.TemplateEngine.Render(templateConfig.URL, context)
+				url, err := r.TemplateEngine.Render(templateConfig.URL, alertCtx)
 				if err != nil {
 					logger.Warn("failed to render template",
 						slog.String("alert", alert.Alert),
@@ -472,7 +459,7 @@ func (r *PrometheusRuleReconciler) processRule(
 					if maxLen == 0 {
 						maxLen = 200
 					}
-					url = shortener.ShortenIfNeeded(r.URLShortener, url, maxLen, context)
+					url = shortener.ShortenIfNeeded(r.URLShortener, url, maxLen, alertCtx)
 				}
 
 				// Add the annotation.
@@ -493,7 +480,7 @@ func (r *PrometheusRuleReconciler) processRule(
 		}
 	}
 
-	return modified, alertCount, nil
+	return modified, alertCount
 }
 
 // shouldSkipAlert checks if an alert has the skip label.
@@ -501,7 +488,7 @@ func shouldSkipAlert(alert monitoringv1.Rule) bool {
 	if alert.Labels == nil {
 		return false
 	}
-	return alert.Labels[LabelSkip] == "true"
+	return alert.Labels[LabelSkip] == LabelValueTrue
 }
 
 // buildAlertContext creates the template context from alert labels.
@@ -511,23 +498,22 @@ func buildAlertContext(
 	rule *monitoringv1.PrometheusRule,
 	defaultLabels map[string]string,
 ) map[string]string {
-
-	context := make(map[string]string)
+	alertCtx := make(map[string]string)
 
 	// Start with default labels.
-	maps.Copy(context, defaultLabels)
+	maps.Copy(alertCtx, defaultLabels)
 
 	// Add rule-level metadata.
-	context["alertname"] = alert.Alert
-	context["namespace"] = rule.Namespace
-	context["rule_name"] = rule.Name
+	alertCtx["alertname"] = alert.Alert
+	alertCtx["namespace"] = rule.Namespace
+	alertCtx["rule_name"] = rule.Name
 
 	// Add alert labels (these override defaults).
 	if alert.Labels != nil {
-		maps.Copy(context, alert.Labels)
+		maps.Copy(alertCtx, alert.Labels)
 	}
 
-	return context
+	return alertCtx
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -540,7 +526,7 @@ func (r *PrometheusRuleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// could cause unexpected behavior.
 	enabledPredicate := predicate.NewPredicateFuncs(func(obj client.Object) bool {
 		labels := obj.GetLabels()
-		return labels != nil && labels[LabelEnabled] == "true"
+		return labels != nil && labels[LabelEnabled] == LabelValueTrue
 	})
 
 	return ctrl.NewControllerManagedBy(mgr).

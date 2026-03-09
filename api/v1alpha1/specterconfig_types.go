@@ -31,6 +31,8 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"slices"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -430,17 +432,10 @@ func (t *TemplateConfig) IsEnabled() bool {
 //   - The template has no severity filter (applies to all), OR
 //   - The given severity is in the template's severity list
 func (t *TemplateConfig) MatchesSeverity(severity string) bool {
-	// No filter means match all severities
 	if len(t.Severity) == 0 {
 		return true
 	}
-
-	for _, s := range t.Severity {
-		if s == severity {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(t.Severity, severity)
 }
 
 // HasRequiredLabels checks if all required labels are present in the given map.

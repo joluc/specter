@@ -317,8 +317,8 @@ func TestEngine_Validate_InvalidTemplates(t *testing.T) {
 
 	invalidTemplates := []string{
 		"{{.service | unknownFunction}}", // Unknown function
-		"{{.service",                      // Unclosed brace
-		"{{if .service}}no end",           // Missing {{end}}
+		"{{.service",                     // Unclosed brace
+		"{{if .service}}no end",          // Missing {{end}}
 	}
 
 	for _, tmpl := range invalidTemplates {

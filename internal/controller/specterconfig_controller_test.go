@@ -18,6 +18,8 @@ package controller
 
 import (
 	"context"
+	"io"
+	"log/slog"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -28,6 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	configv1alpha1 "github.com/joluc/specter/api/v1alpha1"
+	"github.com/joluc/specter/internal/template"
 )
 
 var _ = Describe("SpecterConfig Controller", func() {
@@ -68,17 +71,18 @@ var _ = Describe("SpecterConfig Controller", func() {
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
+			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 			controllerReconciler := &SpecterConfigReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:         k8sClient,
+				Scheme:         k8sClient.Scheme(),
+				Logger:         logger,
+				TemplateEngine: template.NewEngine(logger),
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
 		})
 	})
 })
