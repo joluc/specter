@@ -1,0 +1,93 @@
+# Default values for specter
+# This is a YAML-formatted file.
+
+# Image configuration
+image:
+  repository: joluc/specter
+  tag: ""  # Defaults to appVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# Number of replicas
+replicaCount: 1
+
+# Controller configuration
+controller:
+  # Log level: debug, info, warn, error
+  logLevel: info
+  # Log format: json or text
+  logFormat: json
+  # Enable leader election (required for HA)
+  leaderElection: true
+
+# URL shortener configuration
+shortener:
+  # Enable the URL shortener
+  enabled: false
+  # Base URL for short links (required if enabled)
+  baseURL: ""
+  # How long shortened URLs remain valid
+  ttl: "168h"
+
+# Metrics configuration
+metrics:
+  # Enable metrics endpoint
+  enabled: true
+  # Metrics bind address
+  bindAddress: ":8443"
+  # Use HTTPS for metrics
+  secure: true
+
+# Health probes
+healthProbes:
+  bindAddress: ":8081"
+
+# Resource limits and requests
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Service account
+serviceAccount:
+  # Create a service account
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account (generated if not set)
+  name: ""
+
+# Pod annotations
+podAnnotations: {}
+
+# Pod labels
+podLabels: {}
+
+# Security context for the pod
+podSecurityContext:
+  runAsNonRoot: true
+
+# Security context for the container
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+# RBAC configuration
+rbac:
+  # Create RBAC resources
+  create: true

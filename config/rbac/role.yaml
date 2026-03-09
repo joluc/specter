@@ -1,0 +1,57 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - config.joluc.de
+  resources:
+  - clusterspecterconfigs
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - config.joluc.de
+  resources:
+  - clusterspecterconfigs/status
+  - specterconfigs/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - config.joluc.de
+  resources:
+  - specterconfigs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - config.joluc.de
+  resources:
+  - specterconfigs/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - prometheusrules
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - prometheusrules/status
+  verbs:
+  - get

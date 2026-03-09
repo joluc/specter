@@ -1,0 +1,456 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: specterconfigs.config.joluc.de
+spec:
+  group: config.joluc.de
+  names:
+    kind: SpecterConfig
+    listKind: SpecterConfigList
+    plural: specterconfigs
+    shortNames:
+    - sc
+    singular: specterconfig
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Number of enabled templates
+      jsonPath: .status.templateCount
+      name: Templates
+      type: integer
+    - description: Number of processed PrometheusRules
+      jsonPath: .status.processedRules
+      name: Rules
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: "SpecterConfig is the Schema for the specterconfigs API.\nIt
+          defines URL templates for diagnostic links that are injected into\nPrometheusRule
+          annotations.\n\nUSAGE:\n\n 1. Create a SpecterConfig in your namespace with
+          URL templates\n 2. Add the label specter.joluc.de/enabled: \"true\" to your
+          PrometheusRules\n 3. Specter will automatically inject diagnostic URLs into
+          your alerts\n 4. When alerts fire, the URLs appear in your notification
+          channels\n\nEXAMPLE:\n\n\tapiVersion: config.joluc.de/v1alpha1\n\tkind:
+          SpecterConfig\n\tmetadata:\n\t  name: team-config\n\t  namespace: my-team\n\tspec:\n\t
+          \ templates:\n\t    logs:\n\t      url: \"https://opensearch.io/logs?service={{.service}}\"\n\t
+          \     description: \"View application logs\"\n\t    traces:\n\t      url:
+          \"https://jaeger.io/search?service={{.service}}\"\n\t      description:
+          \"Search distributed traces\""
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: Spec defines the desired state - which templates to use and
+              how.
+            properties:
+              defaultLabels:
+                additionalProperties:
+                  type: string
+                description: |-
+                  DefaultLabels are fallback values used when a label is not present on the alert.
+                  This is useful for setting organization-wide defaults that apply when
+                  individual alerts don't specify certain labels.
+
+                  Example:
+                    defaultLabels:
+                      environment: "production"
+                      region: "eu-west-1"
+                      team: "platform"
+
+                  If an alert has labels {service: "billing-api"} and defaultLabels has
+                  {environment: "production"}, the template context will include both.
+                type: object
+              selector:
+                description: |-
+                  Selector allows you to target specific PrometheusRules for this config.
+                  If empty/nil, this config applies to all rules in the namespace that have
+                  the label specter.joluc.de/enabled: "true".
+
+                  LEARNING NOTE: Label selectors are fundamental in Kubernetes. They're how
+                  components find related resources. Examples:
+                    - Services find Pods via selectors
+                    - Deployments manage ReplicaSets via selectors
+                    - Here, SpecterConfig finds PrometheusRules via selectors
+
+                  Example - only apply to rules with specific team label:
+                    selector:
+                      matchLabels:
+                        team: "payments"
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: |-
+                        A label selector requirement is a selector that contains values, a key, and an operator that
+                        relates the key and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: |-
+                            operator represents a key's relationship to a set of values.
+                            Valid operators are In, NotIn, Exists and DoesNotExist.
+                          type: string
+                        values:
+                          description: |-
+                            values is an array of string values. If the operator is In or NotIn,
+                            the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                            the values array must be empty. This array is replaced during a strategic
+                            merge patch.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                      map is equivalent to an element of matchExpressions, whose key field is "key", the
+                      operator is "In", and the values array contains only "value". The requirements are ANDed.
+                    type: object
+                type: object
+                x-kubernetes-map-type: atomic
+              shortener:
+                description: |-
+                  Shortener configures the optional URL shortening service.
+
+                  WHY THIS EXISTS: Observability tools like OpenSearch generate extremely
+                  long URLs because they encode complex queries directly in the URL (using
+                  RISON format). These URLs can be 1000+ characters, which causes problems:
+                    - Slack truncates long URLs, breaking the links
+                    - Some notification systems have URL length limits
+                    - Long URLs are hard to share verbally or copy manually
+
+                  The shortener creates compact redirect links like:
+                    https://specter.mycompany.io/s/abc123 -> (redirects to full URL)
+                properties:
+                  baseURL:
+                    description: |-
+                      BaseURL is the external URL where Specter's shortener endpoint is accessible.
+                      This is typically exposed via an Ingress or LoadBalancer Service.
+
+                      Example: "https://specter.mycompany.io"
+
+                      The short URLs will be: {BaseURL}/s/{shortId}
+                    type: string
+                  enabled:
+                    default: false
+                    description: |-
+                      Enabled toggles URL shortening. When enabled, URLs exceeding MaxURLLength
+                      are replaced with short redirect links.
+
+                      The shortener stores URLs in memory with automatic expiration.
+                      Short links look like: https://specter.mycompany.io/s/abc123
+                    type: boolean
+                  maxURLLength:
+                    default: 200
+                    description: |-
+                      MaxURLLength is the threshold above which URLs are shortened.
+                      URLs shorter than this value are left unchanged to avoid unnecessary redirects.
+
+                      Recommended values:
+                        - 200: Conservative, shortens most observability URLs
+                        - 500: Only shortens very long URLs (OpenSearch with complex queries)
+                        - 2000: Only shortens extremely long URLs
+                    minimum: 50
+                    type: integer
+                  ttl:
+                    default: 168h
+                    description: |-
+                      TTL is the time-to-live for shortened URLs in Go duration format.
+                      After this duration, the short URL expires and returns 404.
+
+                      Examples: "24h", "168h" (7 days), "720h" (30 days)
+                    type: string
+                type: object
+              templates:
+                additionalProperties:
+                  description: |-
+                    TemplateConfig defines a single URL template and its configuration.
+                    Each template generates one diagnostic link that will be added to alerts.
+                  properties:
+                    description:
+                      description: |-
+                        Description is a human-readable explanation of what this link shows.
+                        This appears in alert notifications to help on-call engineers understand
+                        what they'll see when clicking the link.
+
+                        Good descriptions are action-oriented:
+                          - "View application logs filtered by service"
+                          - "Open Grafana dashboard showing error rates"
+                          - "Search distributed traces for this service"
+                      type: string
+                    enabled:
+                      default: true
+                      description: |-
+                        Enabled allows temporarily disabling a template without removing it.
+                        Useful for maintenance or testing. Defaults to true if not specified.
+                      type: boolean
+                    requiredLabels:
+                      description: |-
+                        RequiredLabels specifies labels that must exist for this template to apply.
+                        If any required label is missing from an alert, the template is skipped.
+
+                        USE CASE: Some templates only make sense when certain data is available.
+                        For example, a trace link requires a traceId label:
+
+                          templates:
+                            trace-by-id:
+                              url: "https://jaeger.io/trace/{{.traceId}}"
+                              requiredLabels: ["traceId"]
+                              description: "View the specific trace that triggered this alert"
+
+                        If an alert doesn't have traceId, this template is silently skipped.
+                      items:
+                        type: string
+                      type: array
+                    severity:
+                      description: |-
+                        Severity filters which alert severities receive this template.
+                        If empty, the template applies to all severities.
+                        If specified, only alerts with a matching severity label get this link.
+
+                        USE CASE: You might want expensive APM trace links only for critical alerts,
+                        while cheaper log links go to all alerts:
+
+                          templates:
+                            logs:
+                              url: "https://logs.io/..."
+                              # No severity filter - applies to all alerts
+                            traces:
+                              url: "https://expensive-apm.io/..."
+                              severity: ["critical", "page"]  # Only for high-severity alerts
+                      items:
+                        type: string
+                      type: array
+                    url:
+                      description: |-
+                        URL is a Go text/template string that renders to a diagnostic URL.
+
+                        TEMPLATE VARIABLES:
+                        All labels from the PrometheusRule alert are available as variables:
+                          - {{.service}}     - The service label
+                          - {{.namespace}}   - The namespace label
+                          - {{.alertname}}   - The name of the alert
+                          - {{.severity}}    - The severity label (if present)
+                          - Any other label defined on the alert
+
+                        TEMPLATE FUNCTIONS (built-in helpers):
+                          String manipulation:
+                          - {{.service | urlEncode}}         - URL-encode special characters
+                          - {{.service | lower}}             - Convert to lowercase
+                          - {{.service | upper}}             - Convert to uppercase
+                          - {{.service | replace "-" "_"}}   - Replace characters
+                          - {{.team | default "platform"}}   - Provide fallback for missing labels
+
+                          Time functions:
+                          - {{now}}                          - Current Unix timestamp
+                          - {{nowRFC3339}}                   - Current time in RFC3339 format
+
+                          Query escaping:
+                          - {{.query | kueryEscape}}         - Escape for Kibana Query Language
+
+                        EXAMPLE TEMPLATES:
+
+                        Simple Grafana dashboard:
+                          https://grafana.io/d/abc123?var-service={{.service | urlEncode}}
+
+                        OpenSearch with KQL query:
+                          https://opensearch.io/_dashboards/app/discover#/?_a=(query:(language:kuery,query:'service:"{{.service | kueryEscape}}"'))
+
+                        Jaeger trace search:
+                          https://jaeger.io/search?service={{.service}}&lookback=1h
+
+                        Conditional based on environment:
+                          {{if eq .env "production"}}https://prod.grafana.io{{else}}https://staging.grafana.io{{end}}/d/{{.dashboard}}
+                      minLength: 1
+                      type: string
+                  required:
+                  - url
+                  type: object
+                description: |-
+                  Templates is a map of template names to their configurations.
+                  Common template names include: "logs", "traces", "metrics", "runbook", "oncall"
+
+                  Each template defines a URL pattern that will be rendered with alert labels
+                  and injected into PrometheusRule annotations.
+
+                  Example:
+                    templates:
+                      logs:
+                        url: "https://opensearch.mycompany.io/app/discover#/?query={{.service}}"
+                        description: "View application logs in OpenSearch"
+                      traces:
+                        url: "https://jaeger.mycompany.io/trace?service={{.service}}"
+                        description: "View distributed traces in Jaeger"
+                      metrics:
+                        url: "https://grafana.mycompany.io/d/{{.dashboard}}?var-service={{.service}}"
+                        description: "View Grafana dashboard"
+                type: object
+            type: object
+          status:
+            description: Status defines the observed state - what Specter has actually
+              done.
+            properties:
+              conditions:
+                description: |-
+                  Conditions represent the latest observations of the config's state.
+                  Standard condition types include:
+                    - "Ready": The config is valid and actively being applied
+                    - "TemplatesValid": All URL templates parse without errors
+                    - "Degraded": Some templates have errors (see ValidationErrors)
+
+                  LEARNING NOTE: Conditions are the Kubernetes-standard way to report
+                  resource state. They have:
+                    - Type: What aspect of the resource this describes
+                    - Status: True, False, or Unknown
+                    - Reason: Machine-readable reason code
+                    - Message: Human-readable explanation
+                    - LastTransitionTime: When status last changed
+
+                  Tools like kubectl and dashboards understand this pattern.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              processedRules:
+                description: |-
+                  ProcessedRules lists PrometheusRules that have been annotated by this config.
+                  Useful for debugging and understanding which rules this config affects.
+                items:
+                  description: ProcessedRuleRef tracks a PrometheusRule that Specter
+                    has processed.
+                  properties:
+                    alertCount:
+                      description: AlertCount is the number of alerts in this rule.
+                      type: integer
+                    annotatedCount:
+                      description: AnnotatedCount is the number of alerts that received
+                        Specter annotations.
+                      type: integer
+                    lastReconciled:
+                      description: LastReconciled is when this rule was last processed
+                        by Specter.
+                      format: date-time
+                      type: string
+                    name:
+                      description: Name is the name of the PrometheusRule.
+                      type: string
+                    namespace:
+                      description: Namespace is the namespace of the PrometheusRule.
+                      type: string
+                  required:
+                  - alertCount
+                  - annotatedCount
+                  - lastReconciled
+                  - name
+                  - namespace
+                  type: object
+                type: array
+              templateCount:
+                description: |-
+                  TemplateCount is the number of enabled templates in this config.
+                  This is a convenience field for quick status display with kubectl.
+                type: integer
+              validationErrors:
+                description: |-
+                  ValidationErrors contains any template parsing or validation errors.
+                  If non-empty, the templates with errors won't be applied to alerts.
+                  The controller will set the "Degraded" condition when errors exist.
+                items:
+                  type: string
+                type: array
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

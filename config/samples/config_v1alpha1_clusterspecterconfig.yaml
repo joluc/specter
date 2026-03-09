@@ -1,0 +1,9 @@
+apiVersion: config.joluc.de/v1alpha1
+kind: ClusterSpecterConfig
+metadata:
+  labels:
+    app.kubernetes.io/name: specter
+    app.kubernetes.io/managed-by: kustomize
+  name: clusterspecterconfig-sample
+spec:
+  # TODO(user): Add fields here

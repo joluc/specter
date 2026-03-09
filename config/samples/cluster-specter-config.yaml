@@ -1,0 +1,81 @@
+# Example ClusterSpecterConfig - Organization-wide defaults
+#
+# This resource provides default URL templates for all namespaces.
+# Teams can override these with namespace-scoped SpecterConfig resources.
+#
+# USAGE:
+# 1. Apply this config: kubectl apply -f cluster-specter-config.yaml
+# 2. Add label specter.joluc.de/enabled: "true" to your PrometheusRules
+# 3. Specter automatically injects diagnostic URLs into your alerts
+#
+# PRECEDENCE (highest to lowest):
+# 1. Annotations directly on the PrometheusRule
+# 2. Namespace-scoped SpecterConfig
+# 3. This ClusterSpecterConfig (lowest priority)
+
+apiVersion: config.joluc.de/v1alpha1
+kind: ClusterSpecterConfig
+metadata:
+  # "global" is the conventional name for the primary cluster config
+  name: global
+spec:
+  # ===========================================================================
+  # URL TEMPLATES
+  # ===========================================================================
+  # Each template generates a diagnostic link that gets injected into alerts.
+  # Templates use Go text/template syntax: {{.labelName}}
+
+  templates:
+    # Logs template - Link to your centralized logging system
+    logs:
+      url: >-
+        https://opensearch.mycompany.io/_dashboards/app/discover#/?_a=(query:(language:kuery,query:'service:"{{.service | kueryEscape}}" AND namespace:"{{.namespace | kueryEscape}}"'))
+      description: "View application logs in OpenSearch"
+
+    # Traces template - Link to distributed tracing
+    traces:
+      url: "https://jaeger.mycompany.io/search?service={{.service | urlEncode}}&lookback=1h"
+      description: "Search distributed traces in Jaeger"
+
+    # Metrics template - Link to Grafana dashboard
+    metrics:
+      url: "https://grafana.mycompany.io/d/service-overview?var-service={{.service | urlEncode}}&var-namespace={{.namespace | urlEncode}}"
+      description: "View service metrics in Grafana"
+
+    # Runbook template - Link to documentation
+    runbook:
+      url: "https://wiki.mycompany.io/runbooks/{{.alertname | urlEncode}}"
+      description: "View runbook for this alert"
+
+    # APM template - Only for critical alerts (expensive resource)
+    apm:
+      url: "https://apm.mycompany.io/services/{{.service | urlEncode}}/transactions"
+      description: "View APM details"
+      # Only add this link to critical alerts
+      severity:
+        - critical
+        - page
+
+  # ===========================================================================
+  # DEFAULT LABELS
+  # ===========================================================================
+  # Fallback values used when alerts don't have certain labels.
+  # Alert labels always take precedence over defaults.
+
+  defaultLabels:
+    environment: "production"
+    region: "eu-west-1"
+
+  # ===========================================================================
+  # URL SHORTENER
+  # ===========================================================================
+  # Shorten long URLs (especially OpenSearch) to prevent Slack truncation.
+  # Requires Specter to be accessible at the specified baseURL.
+
+  shortener:
+    enabled: true
+    baseURL: "https://specter.mycompany.io"
+    # Only shorten URLs longer than 200 characters
+    maxURLLength: 200
+    # Short URLs expire after 7 days
+    ttl: "168h"

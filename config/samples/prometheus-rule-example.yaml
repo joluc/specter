@@ -1,0 +1,68 @@
+# Example PrometheusRule with Specter enabled
+#
+# This shows how to enable Specter for a PrometheusRule.
+# The key is adding the label: specter.joluc.de/enabled: "true"
+#
+# WHAT HAPPENS:
+# 1. Specter detects this rule (via the enabled label)
+# 2. For each alert, Specter renders URL templates with the alert's labels
+# 3. Generated URLs are added as annotations: specter.joluc.de/logs, etc.
+# 4. When alerts fire, Alertmanager sends these URLs to your notification channel
+
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: billing-service-alerts
+  namespace: payments
+  labels:
+    # This label tells Specter to process this rule
+    specter.joluc.de/enabled: "true"
+    # Your existing labels
+    app: billing-service
+    team: payments
+spec:
+  groups:
+    - name: billing-service
+      rules:
+        # Alert 1: High error rate
+        # Specter will inject: logs URL, traces URL, metrics URL, runbook URL
+        - alert: BillingServiceHighErrorRate
+          expr: |
+            sum(rate(http_requests_total{service="billing-service", status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total{service="billing-service"}[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+            service: billing-service
+            # Specter uses these labels in URL templates
+          annotations:
+            summary: "High error rate on billing service"
+            description: "Error rate is {{ $value | humanizePercentage }}"
+            # Specter will ADD annotations here:
+            # specter.joluc.de/logs: "https://opensearch.io/..."
+            # specter.joluc.de/traces: "https://jaeger.io/..."
+            # specter.joluc.de/metrics: "https://grafana.io/..."
+
+        # Alert 2: High latency
+        - alert: BillingServiceHighLatency
+          expr: |
+            histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{service="billing-service"}[5m])) by (le)) > 1
+          for: 5m
+          labels:
+            severity: warning
+            service: billing-service
+          annotations:
+            summary: "High latency on billing service"
+            description: "P99 latency is {{ $value | humanizeDuration }}"
+
+        # Alert 3: With skip label - Specter ignores this alert
+        - alert: BillingServiceDebugAlert
+          expr: billing_debug_metric > 0
+          labels:
+            severity: info
+            service: billing-service
+            # This label tells Specter to skip this specific alert
+            specter.joluc.de/skip: "true"
+          annotations:
+            summary: "Debug alert - Specter won't add URLs to this one"

@@ -1,0 +1,16 @@
+apiVersion: v2
+name: specter
+description: A Kubernetes operator that automatically injects diagnostic URLs into PrometheusRule alerts
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - prometheus
+  - alerting
+  - observability
+  - operator
+home: https://github.com/joluc/specter
+sources:
+  - https://github.com/joluc/specter
+maintainers:
+  - name: joluc

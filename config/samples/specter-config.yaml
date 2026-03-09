@@ -1,0 +1,50 @@
+# Example SpecterConfig - Team-specific configuration
+#
+# This namespace-scoped config overrides cluster defaults for a specific team.
+# Use this when your team needs different observability tools or URLs.
+#
+# WHEN TO USE:
+# - Your team has a dedicated Grafana instance
+# - You need team-specific dashboards
+# - You want different templates than the cluster default
+#
+# PRECEDENCE:
+# This config takes priority over ClusterSpecterConfig for rules in this namespace.
+
+apiVersion: config.joluc.de/v1alpha1
+kind: SpecterConfig
+metadata:
+  name: payments-team-config
+  namespace: payments
+spec:
+  templates:
+    # Override the logs template to use a team-specific index
+    logs:
+      url: >-
+        https://opensearch.mycompany.io/_dashboards/app/discover#/?_a=(index:'payments-logs-*',query:(language:kuery,query:'service:"{{.service | kueryEscape}}"'))
+      description: "View logs in payments team OpenSearch index"
+
+    # Team-specific Grafana dashboard
+    metrics:
+      url: "https://grafana.mycompany.io/d/payments-overview?var-service={{.service | urlEncode}}"
+      description: "View payments team service dashboard"
+
+    # PagerDuty link for on-call engineers
+    oncall:
+      url: "https://pagerduty.com/services/payments-team"
+      description: "View PagerDuty service"
+      # Only show for critical alerts
+      severity:
+        - critical
+
+    # Trace by specific trace ID (only when traceId label exists)
+    trace-by-id:
+      url: "https://jaeger.mycompany.io/trace/{{.traceId}}"
+      description: "View the specific trace that triggered this alert"
+      requiredLabels:
+        - traceId
+
+  # Team-specific defaults
+  defaultLabels:
+    team: "payments"
+    cost_center: "CC-PAY-001"
