@@ -110,3 +110,26 @@ ingress:
     # - secretName: specter-tls
     #   hosts:
     #     - specter.example.com
+
+# ClusterSpecterConfig - Global configuration for URL templates
+clusterConfig:
+  # Enable ClusterSpecterConfig creation
+  enabled: false
+  # Name of the ClusterSpecterConfig resource
+  name: global
+  # URL templates for diagnostic links
+  templates: {}
+    # logs:
+    #   url: "https://logs.example.com/..."
+    #   description: "View logs"
+    # dashboard:
+    #   url: "https://grafana.example.com/..."
+    #   description: "View dashboard"
+  # Default labels injected into all template contexts
+  defaultLabels: {}
+    # environment: "production"
+    # indexPattern: "logs-*"
+  # URL shortener configuration
+  shortener:
+    enabled: false
+    maxURLLength: 200
