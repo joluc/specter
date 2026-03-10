@@ -59,7 +59,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"net/url"
+	"maps"
+	neturl "net/url"
 
 	configv1alpha1 "github.com/joluc/specter/api/v1alpha1"
 	"github.com/joluc/specter/internal/template"
@@ -113,7 +114,7 @@ func NewShortener(baseURL string, k8sClient client.Client, templateEngine *templ
 // Parameters:
 //   - templateName: The name of the template in ClusterSpecterConfig
 //   - renderedURL: The full rendered URL (unused, kept for signature compatibility)
-//   - context: The variable values used to render the template
+//   - vars: The variable values used to render the template
 //
 // Returns:
 //   - The complete short URL (e.g., "https://specter.io/s/logs/eyJuYW1...")
@@ -129,14 +130,14 @@ func NewShortener(baseURL string, k8sClient client.Client, templateEngine *templ
 //	// shortURL = "https://specter.mycompany.io/s/logs/eyJuYW1lc3BhY2UiOi..."
 //
 // PROCESS:
-//  1. Filter out empty values from context to minimize size
+//  1. Filter out empty values from vars to minimize size
 //  2. Encode variables as JSON
 //  3. Base64url encode (makes it URL-safe)
 //  4. Return short URL: {baseURL}/s/{template}/{encoded_vars}
-func (s *Shortener) Shorten(templateName, renderedURL string, context map[string]string) (string, error) {
+func (s *Shortener) Shorten(templateName, renderedURL string, vars map[string]string) (string, error) {
 	// Extract only non-empty variables to minimize size
 	compactContext := make(map[string]string)
-	for k, v := range context {
+	for k, v := range vars {
 		if v != "" {
 			compactContext[k] = v
 		}
@@ -151,7 +152,7 @@ func (s *Shortener) Shorten(templateName, renderedURL string, context map[string
 	encoded := base64.RawURLEncoding.EncodeToString(jsonData)
 
 	// Build short URL: /s/{template}/{encoded_vars}
-	return fmt.Sprintf("%s/s/%s/%s", s.baseURL, url.PathEscape(templateName), encoded), nil
+	return fmt.Sprintf("%s/s/%s/%s", s.baseURL, neturl.PathEscape(templateName), encoded), nil
 }
 
 // Expand decodes a short URL and renders the template.
@@ -195,16 +196,12 @@ func (s *Shortener) Expand(ctx context.Context, templateName, encodedVars string
 	}
 
 	// 3. Merge variables with default labels (variables take precedence)
-	context := make(map[string]string)
-	for k, v := range defaultLabels {
-		context[k] = v
-	}
-	for k, v := range variables {
-		context[k] = v
-	}
+	renderCtx := make(map[string]string)
+	maps.Copy(renderCtx, defaultLabels)
+	maps.Copy(renderCtx, variables)
 
 	// 4. Render template
-	renderedURL, err := s.templateEngine.Render(templateURL, context)
+	renderedURL, err := s.templateEngine.Render(templateURL, renderCtx)
 	if err != nil {
 		return "", fmt.Errorf("render template: %w", err)
 	}
@@ -234,8 +231,8 @@ func (s *Shortener) findTemplate(ctx context.Context, templateName string) (temp
 //
 // Parameters:
 //   - templateName: The template name used to render the URL
-//   - url: The URL to potentially shorten
-//   - context: The template variables
+//   - fullURL: The URL to potentially shorten
+//   - vars: The template variables
 //   - maxLength: Maximum URL length before shortening kicks in
 //
 // Returns:
@@ -245,7 +242,7 @@ func (s *Shortener) findTemplate(ctx context.Context, templateName string) (temp
 //
 // Example:
 //
-//	finalURL, err := shortener.ShortenIfNeeded("logs", longURL, context, 200)
+//	finalURL, err := shortener.ShortenIfNeeded("logs", longURL, vars, 200)
 //	if err != nil {
 //	    // Still use finalURL (will be original URL)
 //	    log.Warn("failed to shorten URL", "error", err)
@@ -254,20 +251,20 @@ func (s *Shortener) findTemplate(ctx context.Context, templateName string) (temp
 // DESIGN: If shortening fails, we return the original URL rather than
 // erroring out completely. This ensures alerts still have a (long) working
 // link rather than no link at all.
-func (s *Shortener) ShortenIfNeeded(templateName, url string, context map[string]string, maxLength int) (string, error) {
-	if len(url) <= maxLength {
-		return url, nil // Already short enough
+func (s *Shortener) ShortenIfNeeded(templateName, fullURL string, vars map[string]string, maxLength int) (string, error) {
+	if len(fullURL) <= maxLength {
+		return fullURL, nil // Already short enough
 	}
 
-	shortened, err := s.Shorten(templateName, url, context)
+	shortened, err := s.Shorten(templateName, fullURL, vars)
 	if err != nil {
-		return url, err // Fall back to original on error
+		return fullURL, err // Fall back to original on error
 	}
 
 	// Only use short URL if it's actually shorter
-	if len(shortened) < len(url) {
+	if len(shortened) < len(fullURL) {
 		return shortened, nil
 	}
 
-	return url, nil
+	return fullURL, nil
 }
