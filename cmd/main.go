@@ -39,9 +39,9 @@ import (
 	"crypto/tls"
 	"flag"
 	"log/slog"
+	"net/http"
 	"os"
 	goruntime "runtime"
-	"time"
 
 	// Import all Kubernetes client auth plugins (Azure, GCP, OIDC, etc.)
 	// This ensures the operator can authenticate with any Kubernetes cluster.
@@ -138,10 +138,9 @@ func main() {
 		probeAddr            string
 		secureMetrics        bool
 		enableHTTP2          bool
-		logLevel             string
-		logFormat            string
-		shortenerBaseURL     string
-		shortenerTTL         time.Duration
+		logLevel         string
+		logFormat        string
+		shortenerBaseURL string
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0",
@@ -173,8 +172,6 @@ func main() {
 		"Log format: json or text.")
 	flag.StringVar(&shortenerBaseURL, "shortener-base-url", "",
 		"Base URL for the URL shortener service. If empty, shortening is disabled globally.")
-	flag.DurationVar(&shortenerTTL, "shortener-ttl", 7*24*time.Hour,
-		"How long shortened URLs remain valid.")
 
 	flag.Parse()
 
@@ -285,28 +282,28 @@ func main() {
 	// =========================================================================
 	// URL SHORTENER (OPTIONAL)
 	// =========================================================================
-	// The shortener is only created if a base URL is configured.
+	// The stateless shortener is only created if a base URL is configured.
+	// It compresses URLs instead of storing them, requiring no persistence.
 
-	var urlShortener *shortener.Store
+	var urlShortener *shortener.Shortener
 	if shortenerBaseURL != "" {
-		logger.Info("URL shortener enabled",
+		logger.Info("URL shortener enabled (stateless)",
 			slog.String("base_url", shortenerBaseURL),
-			slog.Duration("ttl", shortenerTTL),
 		)
-		urlShortener = shortener.NewStore(shortener.Config{
-			BaseURL:    shortenerBaseURL,
-			DefaultTTL: shortenerTTL,
-			Logger:     logger.With(slog.String("component", "shortener")),
-		})
-		defer urlShortener.Stop()
+		urlShortener = shortener.NewShortener(shortenerBaseURL)
 
-		// Add the shortener HTTP handler to serve redirects.
-		// This adds a /s/ endpoint to the metrics server.
+		// Start HTTP server for shortener redirects on port 8080.
+		// This runs independently of the metrics server.
+		mux := http.NewServeMux()
 		shortenerHandler := shortener.NewHandler(urlShortener, logger.With(slog.String("component", "shortener-handler")))
-		if err := mgr.AddMetricsServerExtraHandler("/s/", shortenerHandler); err != nil {
-			logger.Error("Failed to add shortener handler", slog.String("error", err.Error()))
-			os.Exit(1)
-		}
+		mux.Handle("/s/", shortenerHandler)
+
+		go func() {
+			logger.Info("Starting shortener redirect server", slog.String("addr", ":8080"))
+			if err := http.ListenAndServe(":8080", mux); err != nil {
+				logger.Error("Shortener server failed", slog.String("error", err.Error()))
+			}
+		}()
 	}
 
 	// =========================================================================
