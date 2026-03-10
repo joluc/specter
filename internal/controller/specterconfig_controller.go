@@ -265,8 +265,8 @@ type PrometheusRuleReconciler struct {
 	// TemplateEngine renders URL templates.
 	TemplateEngine *template.Engine
 
-	// URLShortener optionally shortens long URLs.
-	URLShortener *shortener.Store
+	// URLShortener optionally shortens long URLs via stateless compression.
+	URLShortener *shortener.Shortener
 }
 
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=prometheusrules,verbs=get;list;watch;update;patch
@@ -459,7 +459,18 @@ func (r *PrometheusRuleReconciler) processRule(
 					if maxLen == 0 {
 						maxLen = 200
 					}
-					url = shortener.ShortenIfNeeded(r.URLShortener, url, maxLen, alertCtx)
+
+					shortened, err := r.URLShortener.ShortenIfNeeded(url, maxLen)
+					if err != nil {
+						logger.Warn("failed to shorten URL, using original",
+							slog.String("alert", alert.Alert),
+							slog.String("template", templateName),
+							slog.String("error", err.Error()),
+						)
+						// Continue with original URL on error
+					} else {
+						url = shortened
+					}
 				}
 
 				// Add the annotation.

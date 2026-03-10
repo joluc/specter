@@ -178,14 +178,6 @@ var (
 		[]string{"operation"},
 	)
 
-	// ShortenerStoredURLs is a gauge of URLs currently in the shortener store.
-	ShortenerStoredURLs = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "specter_shortener_stored_urls",
-			Help: "Current number of URLs stored in the shortener",
-		},
-	)
-
 	// ShortenerRedirectLatency tracks redirect lookup latency.
 	ShortenerRedirectLatency = promauto.NewHistogram(
 		prometheus.HistogramOpts{
@@ -387,11 +379,6 @@ func UpdateRulesWatched(namespace string, count float64) {
 // UpdateAlertsAnnotated updates the count of annotated alerts for a namespace.
 func UpdateAlertsAnnotated(namespace string, count float64) {
 	AlertsAnnotated.WithLabelValues(namespace).Set(count)
-}
-
-// UpdateShortenerStoredURLs updates the count of stored URLs.
-func UpdateShortenerStoredURLs(count float64) {
-	ShortenerStoredURLs.Set(count)
 }
 
 // UpdateConfigTemplates updates the template count for a config.

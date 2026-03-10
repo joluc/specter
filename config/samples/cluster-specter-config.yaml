@@ -70,12 +70,10 @@ spec:
   # URL SHORTENER
   # ===========================================================================
   # Shorten long URLs (especially OpenSearch) to prevent Slack truncation.
-  # Requires Specter to be accessible at the specified baseURL.
+  # Uses stateless compression - no storage or expiration needed.
+  # Configure baseURL via Helm values (not in CRD).
 
   shortener:
     enabled: true
-    baseURL: "https://specter.mycompany.io"
     # Only shorten URLs longer than 200 characters
     maxURLLength: 200
-    # Short URLs expire after 7 days
-    ttl: "168h"

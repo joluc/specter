@@ -51,7 +51,6 @@ spec:
         - --log-format={{ .Values.controller.logFormat }}
         {{- if .Values.shortener.enabled }}
         - --shortener-base-url={{ .Values.shortener.baseURL }}
-        - --shortener-ttl={{ .Values.shortener.ttl }}
         {{- end }}
         securityContext:
           {{- toYaml .Values.securityContext | nindent 10 }}
@@ -62,6 +61,11 @@ spec:
         {{- if .Values.metrics.enabled }}
         - containerPort: 8443
           name: metrics
+          protocol: TCP
+        {{- end }}
+        {{- if .Values.shortener.enabled }}
+        - containerPort: 8080
+          name: shortener
           protocol: TCP
         {{- end }}
         livenessProbe:
