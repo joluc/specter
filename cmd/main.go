@@ -280,17 +280,22 @@ func main() {
 	}
 
 	// =========================================================================
+	// TEMPLATE ENGINE
+	// =========================================================================
+	templateEngine := template.NewEngine(logger.With(slog.String("component", "template")))
+
+	// =========================================================================
 	// URL SHORTENER (OPTIONAL)
 	// =========================================================================
-	// The stateless shortener is only created if a base URL is configured.
-	// It compresses URLs instead of storing them, requiring no persistence.
+	// The template-based shortener is only created if a base URL is configured.
+	// It encodes template references instead of full URLs, requiring Kubernetes API access.
 
 	var urlShortener *shortener.Shortener
 	if shortenerBaseURL != "" {
-		logger.Info("URL shortener enabled (stateless)",
+		logger.Info("URL shortener enabled (template-based)",
 			slog.String("base_url", shortenerBaseURL),
 		)
-		urlShortener = shortener.NewShortener(shortenerBaseURL)
+		urlShortener = shortener.NewShortener(shortenerBaseURL, mgr.GetClient(), templateEngine)
 
 		// Start HTTP server for shortener redirects on port 8080.
 		// This runs independently of the metrics server.
@@ -305,11 +310,6 @@ func main() {
 			}
 		}()
 	}
-
-	// =========================================================================
-	// TEMPLATE ENGINE
-	// =========================================================================
-	templateEngine := template.NewEngine(logger.With(slog.String("component", "template")))
 
 	// =========================================================================
 	// CONTROLLER REGISTRATION

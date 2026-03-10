@@ -460,7 +460,7 @@ func (r *PrometheusRuleReconciler) processRule(
 						maxLen = 200
 					}
 
-					shortened, err := r.URLShortener.ShortenIfNeeded(url, maxLen)
+					shortened, err := r.URLShortener.ShortenIfNeeded(templateName, url, alertCtx, maxLen)
 					if err != nil {
 						logger.Warn("failed to shorten URL, using original",
 							slog.String("alert", alert.Alert),

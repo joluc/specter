@@ -65,8 +65,8 @@ func NewHandler(shortener *Shortener, logger *slog.Logger) *Handler {
 	}
 }
 
-// ServeHTTP handles requests to /s/{encoded}.
-// It decodes the URL and redirects to the original destination.
+// ServeHTTP handles requests to /s/{template}/{encoded_vars}.
+// It looks up the template, decodes variables, renders, and redirects.
 //
 // LEARNING NOTE: HTTP redirects use different status codes:
 //   - 301 Moved Permanently: Browsers cache this forever
@@ -78,24 +78,30 @@ func NewHandler(shortener *Shortener, logger *slog.Logger) *Handler {
 //   - It's the most widely supported redirect type
 //   - Our URLs are deterministic but not truly "permanent"
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Extract short ID from path: /s/{encoded}
+	// Parse path: /s/{template}/{encoded_vars}
 	path := strings.TrimPrefix(r.URL.Path, "/s/")
-	if path == "" || path == r.URL.Path {
-		h.logger.Warn("short URL request with invalid path",
+	parts := strings.SplitN(path, "/", 2)
+
+	if len(parts) != 2 {
+		h.logger.Warn("short URL request with invalid format",
 			"path", r.URL.Path,
 		)
-		http.Error(w, "Invalid short URL", http.StatusBadRequest)
+		http.Error(w, "Invalid short URL format. Expected: /s/{template}/{vars}", http.StatusBadRequest)
 		return
 	}
 
-	// Decode and decompress
-	originalURL, err := h.shortener.Expand(path)
+	templateName := parts[0]
+	encodedVars := parts[1]
+
+	// Expand short URL to full URL
+	ctx := r.Context()
+	originalURL, err := h.shortener.Expand(ctx, templateName, encodedVars)
 	if err != nil {
 		h.logger.Error("Failed to expand short URL",
-			"path", path,
+			"template", templateName,
 			"error", err,
 		)
-		http.Error(w, "Invalid or corrupted short URL", http.StatusBadRequest)
+		http.Error(w, "Failed to expand URL: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -109,11 +115,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.logger.Debug("Redirected short URL",
-		"short_id_length", len(path),
-		"original_url_length", len(originalURL),
-	)
-
 	// Redirect (HTTP 302 - temporary)
 	http.Redirect(w, r, originalURL, http.StatusFound)
+
+	h.logger.Debug("Redirected short URL",
+		"template", templateName,
+		"original_url_length", len(originalURL),
+	)
 }

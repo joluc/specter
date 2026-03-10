@@ -17,274 +17,326 @@ limitations under the License.
 package shortener
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	configv1alpha1 "github.com/joluc/specter/api/v1alpha1"
+	"github.com/joluc/specter/internal/template"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+func newTestScheme() *runtime.Scheme {
+	scheme := runtime.NewScheme()
+	_ = configv1alpha1.AddToScheme(scheme)
+	return scheme
+}
+
 func TestShorten(t *testing.T) {
-	shortener := NewShortener("https://specter.example.com")
-
-	testCases := []struct {
-		name        string
-		url         string
-		expectError bool
-	}{
-		{
-			name:        "short URL",
-			url:         "https://example.com/test",
-			expectError: false,
-		},
-		{
-			name:        "long URL",
-			url:         "https://logs.example.com/app/data-explorer/discover#?_a=%28discover%3A%28columns%3A%21%28_source%29%2CisDirty%3A%21f%29%29&_g=%28filters%3A%21%28%29%2Ctime%3A%28from%3Anow-1h%2Cto%3Anow%29%29",
-			expectError: false,
-		},
-		{
-			name:        "very long URL",
-			url:         strings.Repeat("https://example.com/very/long/path/segment/", 50),
-			expectError: false,
-		},
-		{
-			name:        "empty URL",
-			url:         "",
-			expectError: false,
+	// Setup fake Kubernetes client with ClusterSpecterConfig
+	config := &configv1alpha1.ClusterSpecterConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "global"},
+		Spec: configv1alpha1.ClusterSpecterConfigSpec{
+			Templates: map[string]configv1alpha1.TemplateConfig{
+				"logs": {
+					URL: "https://logs.example.com?ns={{.namespace}}&idx={{.indexPattern}}",
+				},
+			},
+			DefaultLabels: map[string]string{
+				"indexPattern": "default-*",
+			},
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			shortened, err := shortener.Shorten(tc.url)
-			if tc.expectError && err == nil {
-				t.Errorf("expected error but got none")
-			}
-			if !tc.expectError && err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-			if err == nil {
-				if !strings.HasPrefix(shortened, "https://specter.example.com/s/") {
-					t.Errorf("shortened URL has wrong prefix: %s", shortened)
-				}
-				// Verify it's actually shorter for long URLs
-				if len(tc.url) > 200 && len(shortened) >= len(tc.url) {
-					t.Errorf("shortened URL is not shorter: original=%d, shortened=%d", len(tc.url), len(shortened))
-				}
-			}
-		})
+	fakeClient := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(config).Build()
+	engine := template.NewEngine(nil)
+	s := NewShortener("https://specter.io", fakeClient, engine)
+
+	vars := map[string]string{
+		"namespace":    "monitoring",
+		"indexPattern": "logs-2024-*",
 	}
+
+	// Test shortening
+	shortURL, err := s.Shorten("logs", "https://logs.example.com?ns=monitoring&idx=logs-2024-*", vars)
+	require.NoError(t, err)
+	assert.Contains(t, shortURL, "https://specter.io/s/logs/")
+	assert.Less(t, len(shortURL), 150) // Should be very short
 }
 
 func TestExpand(t *testing.T) {
-	shortener := NewShortener("https://specter.example.com")
-
-	testCases := []struct {
-		name        string
-		url         string
-		expectError bool
-	}{
-		{
-			name:        "short URL",
-			url:         "https://example.com/test",
-			expectError: false,
-		},
-		{
-			name:        "long URL with special characters",
-			url:         "https://logs.example.com/app?param=value&other=123#fragment",
-			expectError: false,
-		},
-		{
-			name:        "URL with unicode",
-			url:         "https://example.com/path/文字/test",
-			expectError: false,
+	config := &configv1alpha1.ClusterSpecterConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "global"},
+		Spec: configv1alpha1.ClusterSpecterConfigSpec{
+			Templates: map[string]configv1alpha1.TemplateConfig{
+				"logs": {
+					URL: "https://logs.example.com?ns={{.namespace}}&idx={{.indexPattern}}",
+				},
+			},
+			DefaultLabels: map[string]string{
+				"indexPattern": "default-*",
+			},
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			// First shorten
-			shortened, err := shortener.Shorten(tc.url)
-			if err != nil {
-				t.Fatalf("failed to shorten: %v", err)
-			}
+	fakeClient := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(config).Build()
+	engine := template.NewEngine(nil)
+	s := NewShortener("https://specter.io", fakeClient, engine)
 
-			// Extract short ID from URL
-			shortID := strings.TrimPrefix(shortened, "https://specter.example.com/s/")
-
-			// Then expand
-			expanded, err := shortener.Expand(shortID)
-			if tc.expectError && err == nil {
-				t.Errorf("expected error but got none")
-			}
-			if !tc.expectError && err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-			if err == nil && expanded != tc.url {
-				t.Errorf("expanded URL doesn't match original:\noriginal: %s\nexpanded: %s", tc.url, expanded)
-			}
-		})
+	// Create a short URL
+	vars := map[string]string{
+		"namespace":    "monitoring",
+		"indexPattern": "logs-2024-*",
 	}
+	shortURL, _ := s.Shorten("logs", "", vars)
+
+	// Extract encoded part
+	parts := strings.Split(strings.TrimPrefix(shortURL, "https://specter.io/s/"), "/")
+	templateName := parts[0]
+	encodedVars := parts[1]
+
+	// Test expansion
+	ctx := context.Background()
+	expandedURL, err := s.Expand(ctx, templateName, encodedVars)
+	require.NoError(t, err)
+	assert.Equal(t, "https://logs.example.com?ns=monitoring&idx=logs-2024-*", expandedURL)
 }
 
-func TestExpandInvalid(t *testing.T) {
-	shortener := NewShortener("https://specter.example.com")
-
-	testCases := []struct {
-		name    string
-		shortID string
-	}{
-		{
-			name:    "invalid base64",
-			shortID: "not-valid-base64!!!",
-		},
-		{
-			name:    "valid base64 but not gzip",
-			shortID: "SGVsbG8gV29ybGQ",
-		},
-		{
-			name:    "empty string",
-			shortID: "",
+func TestExpandWithDefaultLabels(t *testing.T) {
+	config := &configv1alpha1.ClusterSpecterConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "global"},
+		Spec: configv1alpha1.ClusterSpecterConfigSpec{
+			Templates: map[string]configv1alpha1.TemplateConfig{
+				"dashboard": {
+					URL: "https://dash.example.com?ns={{.namespace}}&env={{.environment}}",
+				},
+			},
+			DefaultLabels: map[string]string{
+				"environment": "production",
+			},
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := shortener.Expand(tc.shortID)
-			if err == nil {
-				t.Errorf("expected error for invalid input but got none")
-			}
-		})
+	fakeClient := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(config).Build()
+	engine := template.NewEngine(nil)
+	s := NewShortener("https://specter.io", fakeClient, engine)
+
+	// Only provide namespace, environment should come from defaults
+	vars := map[string]string{
+		"namespace": "monitoring",
 	}
+	shortURL, _ := s.Shorten("dashboard", "", vars)
+
+	// Extract encoded part
+	parts := strings.Split(strings.TrimPrefix(shortURL, "https://specter.io/s/"), "/")
+	templateName := parts[0]
+	encodedVars := parts[1]
+
+	// Test expansion
+	ctx := context.Background()
+	expandedURL, err := s.Expand(ctx, templateName, encodedVars)
+	require.NoError(t, err)
+	assert.Equal(t, "https://dash.example.com?ns=monitoring&env=production", expandedURL)
 }
 
 func TestShortenIfNeeded(t *testing.T) {
-	shortener := NewShortener("https://specter.example.com")
-
-	testCases := []struct {
-		name          string
-		url           string
-		maxLength     int
-		expectShorten bool
-	}{
-		{
-			name:          "short URL below threshold",
-			url:           "https://example.com/test",
-			maxLength:     200,
-			expectShorten: false,
-		},
-		{
-			name:          "long URL above threshold",
-			url:           strings.Repeat("https://example.com/very/long/path/", 10),
-			maxLength:     200,
-			expectShorten: true,
-		},
-		{
-			name:          "URL exactly at threshold",
-			url:           strings.Repeat("a", 200),
-			maxLength:     200,
-			expectShorten: false,
-		},
-		{
-			name:          "URL one char over threshold",
-			url:           strings.Repeat("a", 201),
-			maxLength:     200,
-			expectShorten: true,
+	config := &configv1alpha1.ClusterSpecterConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "global"},
+		Spec: configv1alpha1.ClusterSpecterConfigSpec{
+			Templates: map[string]configv1alpha1.TemplateConfig{
+				"logs": {URL: "https://logs.example.com?ns={{.namespace}}"},
+			},
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			result, err := shortener.ShortenIfNeeded(tc.url, tc.maxLength)
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
+	fakeClient := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(config).Build()
+	engine := template.NewEngine(nil)
+	s := NewShortener("https://specter.io", fakeClient, engine)
 
-			if tc.expectShorten {
-				if result == tc.url {
-					t.Errorf("expected URL to be shortened but it wasn't")
-				}
-				if !strings.HasPrefix(result, "https://specter.example.com/s/") {
-					t.Errorf("shortened URL has wrong prefix: %s", result)
-				}
+	tests := []struct {
+		name      string
+		url       string
+		maxLength int
+		wantShort bool
+	}{
+		{
+			name:      "short URL stays unchanged",
+			url:       "https://example.com/short",
+			maxLength: 100,
+			wantShort: false,
+		},
+		{
+			name:      "long URL gets shortened",
+			url:       strings.Repeat("x", 300),
+			maxLength: 200,
+			wantShort: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := s.ShortenIfNeeded("logs", tt.url, map[string]string{"namespace": "test"}, tt.maxLength)
+			require.NoError(t, err)
+
+			if tt.wantShort {
+				assert.Contains(t, result, "/s/")
 			} else {
-				if result != tc.url {
-					t.Errorf("expected URL to remain unchanged but it was modified")
-				}
+				assert.Equal(t, tt.url, result)
 			}
 		})
 	}
 }
 
-func TestShortenDeterministic(t *testing.T) {
-	shortener := NewShortener("https://specter.example.com")
-
-	url := "https://example.com/test/path?param=value"
-
-	// Shorten the same URL multiple times
-	shortened1, err1 := shortener.Shorten(url)
-	shortened2, err2 := shortener.Shorten(url)
-	shortened3, err3 := shortener.Shorten(url)
-
-	if err1 != nil || err2 != nil || err3 != nil {
-		t.Fatalf("errors during shortening: %v, %v, %v", err1, err2, err3)
+func TestTemplateNotFound(t *testing.T) {
+	config := &configv1alpha1.ClusterSpecterConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "global"},
+		Spec: configv1alpha1.ClusterSpecterConfigSpec{
+			Templates: map[string]configv1alpha1.TemplateConfig{
+				"logs": {
+					URL: "https://logs.example.com",
+				},
+			},
+		},
 	}
 
-	// All results should be identical (deterministic)
-	if shortened1 != shortened2 || shortened2 != shortened3 {
-		t.Errorf("shortening is not deterministic:\n1: %s\n2: %s\n3: %s", shortened1, shortened2, shortened3)
-	}
+	fakeClient := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(config).Build()
+	engine := template.NewEngine(nil)
+	s := NewShortener("https://specter.io", fakeClient, engine)
+
+	ctx := context.Background()
+	_, err := s.Expand(ctx, "nonexistent", "e30")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "template \"nonexistent\" not found")
 }
 
-func TestCompressionRatio(t *testing.T) {
-	shortener := NewShortener("https://specter.example.com")
-
-	// Create a very long URL (typical OpenSearch URL)
-	longURL := "https://logs.example.com/app/data-explorer/discover#?_a=%28discover%3A%28columns%3A%21%28_source%29%2CisDirty%3A%21f%2Csort%3A%21%28%29%29%2Cmetadata%3A%28indexPattern%3Af5766eb0-172e-11f1-aad7-8d5ba2b4be4e%2Cview%3Adiscover%29%29&_g=%28filters%3A%21%28%29%2CrefreshInterval%3A%28pause%3A%21t%2Cvalue%3A0%29%2Ctime%3A%28from%3Anow-1h%2Cto%3Anow%29%29&_q=%28filters%3A%21%28%28%27%24state%27%3A%28store%3AappState%29%2Cmeta%3A%28alias%3A%21n%2Cdisabled%3A%21f%2Cindex%3Af5766eb0-172e-11f1-aad7-8d5ba2b4be4e%2Ckey%3Aresource.k8s.namespace.name%2Cnegate%3A%21f%2Cparams%3A%28query%3Amynamespace%29%2Ctype%3Aphrase%29%2Cquery%3A%28match_phrase%3A%28resource.k8s.namespace.name%3Amynamespace%29%29%29%29%2Cquery%3A%28language%3Akuery%2Cquery%3A%27%27%29%29"
-
-	shortened, err := shortener.Shorten(longURL)
-	if err != nil {
-		t.Fatalf("failed to shorten: %v", err)
+func TestShortenDeterministic(t *testing.T) {
+	config := &configv1alpha1.ClusterSpecterConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "global"},
+		Spec: configv1alpha1.ClusterSpecterConfigSpec{
+			Templates: map[string]configv1alpha1.TemplateConfig{
+				"logs": {URL: "https://logs.example.com"},
+			},
+		},
 	}
 
-	originalLen := len(longURL)
-	shortenedLen := len(shortened)
-	ratio := float64(shortenedLen) / float64(originalLen)
+	fakeClient := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(config).Build()
+	engine := template.NewEngine(nil)
+	s := NewShortener("https://specter.io", fakeClient, engine)
 
-	t.Logf("Original length: %d", originalLen)
-	t.Logf("Shortened length: %d", shortenedLen)
-	t.Logf("Compression ratio: %.2f%%", ratio*100)
-
-	// Verify it's actually shorter
-	if shortenedLen >= originalLen {
-		t.Errorf("shortened URL is not shorter than original: shortened=%d, original=%d", shortenedLen, originalLen)
+	vars := map[string]string{
+		"namespace": "test",
+		"alert":     "HighCPU",
 	}
 
-	// For very long URLs, expect the shortened version to be significantly smaller
-	if originalLen > 700 && ratio > 0.80 {
-		t.Errorf("compression ratio too high (%.2f%%) for a long URL, expected < 80%%", ratio*100)
+	// Shorten the same context multiple times
+	shortened1, err1 := s.Shorten("logs", "", vars)
+	shortened2, err2 := s.Shorten("logs", "", vars)
+	shortened3, err3 := s.Shorten("logs", "", vars)
+
+	require.NoError(t, err1)
+	require.NoError(t, err2)
+	require.NoError(t, err3)
+
+	// All results should be identical (deterministic)
+	assert.Equal(t, shortened1, shortened2)
+	assert.Equal(t, shortened2, shortened3)
+}
+
+func TestShortenEmptyValues(t *testing.T) {
+	config := &configv1alpha1.ClusterSpecterConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "global"},
+		Spec: configv1alpha1.ClusterSpecterConfigSpec{
+			Templates: map[string]configv1alpha1.TemplateConfig{
+				"logs": {URL: "https://logs.example.com?ns={{.namespace}}"},
+			},
+		},
 	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(config).Build()
+	engine := template.NewEngine(nil)
+	s := NewShortener("https://specter.io", fakeClient, engine)
+
+	// Context with empty values
+	vars := map[string]string{
+		"namespace": "monitoring",
+		"empty1":    "",
+		"empty2":    "",
+	}
+
+	shortURL, err := s.Shorten("logs", "", vars)
+	require.NoError(t, err)
+
+	// Empty values should be filtered out, making URL shorter
+	// Decode and check that only non-empty values are present
+	parts := strings.Split(strings.TrimPrefix(shortURL, "https://specter.io/s/"), "/")
+	encodedVars := parts[1]
+
+	ctx := context.Background()
+	expandedURL, err := s.Expand(ctx, "logs", encodedVars)
+	require.NoError(t, err)
+	assert.Equal(t, "https://logs.example.com?ns=monitoring", expandedURL)
 }
 
 func BenchmarkShorten(b *testing.B) {
-	shortener := NewShortener("https://specter.example.com")
-	url := "https://logs.example.com/app/data-explorer/discover#?_a=%28discover%3A%28columns%3A%21%28_source%29%29%29"
+	config := &configv1alpha1.ClusterSpecterConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "global"},
+		Spec: configv1alpha1.ClusterSpecterConfigSpec{
+			Templates: map[string]configv1alpha1.TemplateConfig{
+				"logs": {URL: "https://logs.example.com"},
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(config).Build()
+	engine := template.NewEngine(nil)
+	s := NewShortener("https://specter.io", fakeClient, engine)
+
+	vars := map[string]string{
+		"namespace":    "monitoring",
+		"indexPattern": "logs-2024-*",
+	}
 
 	b.ResetTimer()
 	for b.Loop() {
-		_, _ = shortener.Shorten(url)
+		_, _ = s.Shorten("logs", "", vars)
 	}
 }
 
 func BenchmarkExpand(b *testing.B) {
-	shortener := NewShortener("https://specter.example.com")
-	url := "https://logs.example.com/app/data-explorer/discover#?_a=%28discover%3A%28columns%3A%21%28_source%29%29%29"
+	config := &configv1alpha1.ClusterSpecterConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "global"},
+		Spec: configv1alpha1.ClusterSpecterConfigSpec{
+			Templates: map[string]configv1alpha1.TemplateConfig{
+				"logs": {URL: "https://logs.example.com?ns={{.namespace}}"},
+			},
+		},
+	}
 
-	shortened, err := shortener.Shorten(url)
+	fakeClient := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(config).Build()
+	engine := template.NewEngine(nil)
+	s := NewShortener("https://specter.io", fakeClient, engine)
+
+	vars := map[string]string{
+		"namespace": "monitoring",
+	}
+
+	shortURL, err := s.Shorten("logs", "", vars)
 	if err != nil {
 		b.Fatalf("setup failed: %v", err)
 	}
-	shortID := strings.TrimPrefix(shortened, "https://specter.example.com/s/")
+
+	parts := strings.Split(strings.TrimPrefix(shortURL, "https://specter.io/s/"), "/")
+	templateName := parts[0]
+	encodedVars := parts[1]
+
+	ctx := context.Background()
 
 	b.ResetTimer()
 	for b.Loop() {
-		_, _ = shortener.Expand(shortID)
+		_, _ = s.Expand(ctx, templateName, encodedVars)
 	}
 }

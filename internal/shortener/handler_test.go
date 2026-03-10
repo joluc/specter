@@ -23,25 +23,46 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	configv1alpha1 "github.com/joluc/specter/api/v1alpha1"
+	"github.com/joluc/specter/internal/template"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestHandlerRedirect(t *testing.T) {
-	shortener := NewShortener("https://specter.example.com")
+	config := &configv1alpha1.ClusterSpecterConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "global"},
+		Spec: configv1alpha1.ClusterSpecterConfigSpec{
+			Templates: map[string]configv1alpha1.TemplateConfig{
+				"logs": {
+					URL: "https://logs.example.com/test/path?param={{.param}}",
+				},
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(config).Build()
+	engine := template.NewEngine(nil)
+	shortener := NewShortener("https://specter.example.com", fakeClient, engine)
 	logger := slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
 	handler := NewHandler(shortener, logger)
 
-	testURL := "https://logs.example.com/test/path?param=value"
+	vars := map[string]string{
+		"param": "value",
+	}
 
-	// First shorten the URL to get a valid short ID
-	shortened, err := shortener.Shorten(testURL)
+	// First shorten the URL to get a valid short URL
+	shortened, err := shortener.Shorten("logs", "", vars)
 	if err != nil {
 		t.Fatalf("failed to shorten URL: %v", err)
 	}
 
-	shortID := strings.TrimPrefix(shortened, "https://specter.example.com/s/")
+	// Extract path after /s/
+	shortPath := strings.TrimPrefix(shortened, "https://specter.example.com/s/")
 
 	// Test the redirect
-	req := httptest.NewRequest("GET", "/s/"+shortID, nil)
+	req := httptest.NewRequest("GET", "/s/"+shortPath, nil)
 	w := httptest.NewRecorder()
 
 	handler.ServeHTTP(w, req)
@@ -53,13 +74,25 @@ func TestHandlerRedirect(t *testing.T) {
 
 	// Check redirect location
 	location := w.Header().Get("Location")
-	if location != testURL {
-		t.Errorf("expected redirect to %s, got %s", testURL, location)
+	expectedURL := "https://logs.example.com/test/path?param=value"
+	if location != expectedURL {
+		t.Errorf("expected redirect to %s, got %s", expectedURL, location)
 	}
 }
 
 func TestHandlerInvalidPath(t *testing.T) {
-	shortener := NewShortener("https://specter.example.com")
+	config := &configv1alpha1.ClusterSpecterConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "global"},
+		Spec: configv1alpha1.ClusterSpecterConfigSpec{
+			Templates: map[string]configv1alpha1.TemplateConfig{
+				"logs": {URL: "https://logs.example.com"},
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(config).Build()
+	engine := template.NewEngine(nil)
+	shortener := NewShortener("https://specter.example.com", fakeClient, engine)
 	logger := slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
 	handler := NewHandler(shortener, logger)
 
@@ -74,18 +107,18 @@ func TestHandlerInvalidPath(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:           "missing /s/ prefix",
-			path:           "/invalid",
+			name:           "missing template part",
+			path:           "/s/onlyonepart",
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:           "invalid base64",
-			path:           "/s/not-valid-base64!!!",
+			name:           "invalid base64 in vars",
+			path:           "/s/logs/not-valid-base64!!!",
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
-			name:           "valid base64 but not gzip",
-			path:           "/s/SGVsbG8gV29ybGQ",
+			name:           "nonexistent template",
+			path:           "/s/nonexistent/e30",
 			expectedStatus: http.StatusBadRequest,
 		},
 	}
@@ -105,23 +138,33 @@ func TestHandlerInvalidPath(t *testing.T) {
 }
 
 func TestHandlerInvalidScheme(t *testing.T) {
-	// This tests the scheme validation in the handler
-	// We need to manually create a corrupted short ID that decodes to an invalid URL
+	// Template with invalid scheme should be rejected
+	config := &configv1alpha1.ClusterSpecterConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "global"},
+		Spec: configv1alpha1.ClusterSpecterConfigSpec{
+			Templates: map[string]configv1alpha1.TemplateConfig{
+				"badscheme": {
+					URL: "javascript:alert('xss')",
+				},
+			},
+		},
+	}
 
-	shortener := NewShortener("https://specter.example.com")
+	fakeClient := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(config).Build()
+	engine := template.NewEngine(nil)
+	shortener := NewShortener("https://specter.example.com", fakeClient, engine)
 	logger := slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
 	handler := NewHandler(shortener, logger)
 
-	// Create a short ID for a URL with invalid scheme
-	invalidURL := "javascript:alert('xss')"
-	shortened, err := shortener.Shorten(invalidURL)
+	// Create a short URL for the bad template
+	shortened, err := shortener.Shorten("badscheme", "", map[string]string{})
 	if err != nil {
 		t.Fatalf("failed to shorten URL: %v", err)
 	}
 
-	shortID := strings.TrimPrefix(shortened, "https://specter.example.com/s/")
+	shortPath := strings.TrimPrefix(shortened, "https://specter.example.com/s/")
 
-	req := httptest.NewRequest("GET", "/s/"+shortID, nil)
+	req := httptest.NewRequest("GET", "/s/"+shortPath, nil)
 	w := httptest.NewRecorder()
 
 	handler.ServeHTTP(w, req)
@@ -132,29 +175,59 @@ func TestHandlerInvalidScheme(t *testing.T) {
 	}
 }
 
-func TestHandlerMultipleRedirects(t *testing.T) {
-	shortener := NewShortener("https://specter.example.com")
+func TestHandlerMultipleTemplates(t *testing.T) {
+	config := &configv1alpha1.ClusterSpecterConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "global"},
+		Spec: configv1alpha1.ClusterSpecterConfigSpec{
+			Templates: map[string]configv1alpha1.TemplateConfig{
+				"logs": {
+					URL: "https://logs.example.com?ns={{.namespace}}",
+				},
+				"dashboard": {
+					URL: "https://grafana.example.com/d/{{.dashboardId}}",
+				},
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(config).Build()
+	engine := template.NewEngine(nil)
+	shortener := NewShortener("https://specter.example.com", fakeClient, engine)
 	logger := slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
 	handler := NewHandler(shortener, logger)
 
-	urls := []string{
-		"https://logs.example.com/test1",
-		"https://logs.example.com/test2",
-		"https://grafana.example.com/dashboard",
+	testCases := []struct {
+		name         string
+		templateName string
+		vars         map[string]string
+		expectedURL  string
+	}{
+		{
+			name:         "logs template",
+			templateName: "logs",
+			vars:         map[string]string{"namespace": "monitoring"},
+			expectedURL:  "https://logs.example.com?ns=monitoring",
+		},
+		{
+			name:         "dashboard template",
+			templateName: "dashboard",
+			vars:         map[string]string{"dashboardId": "abc123"},
+			expectedURL:  "https://grafana.example.com/d/abc123",
+		},
 	}
 
-	for _, testURL := range urls {
-		t.Run(testURL, func(t *testing.T) {
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
 			// Shorten
-			shortened, err := shortener.Shorten(testURL)
+			shortened, err := shortener.Shorten(tc.templateName, "", tc.vars)
 			if err != nil {
 				t.Fatalf("failed to shorten URL: %v", err)
 			}
 
-			shortID := strings.TrimPrefix(shortened, "https://specter.example.com/s/")
+			shortPath := strings.TrimPrefix(shortened, "https://specter.example.com/s/")
 
 			// Redirect
-			req := httptest.NewRequest("GET", "/s/"+shortID, nil)
+			req := httptest.NewRequest("GET", "/s/"+shortPath, nil)
 			w := httptest.NewRecorder()
 
 			handler.ServeHTTP(w, req)
@@ -164,8 +237,8 @@ func TestHandlerMultipleRedirects(t *testing.T) {
 			}
 
 			location := w.Header().Get("Location")
-			if location != testURL {
-				t.Errorf("expected redirect to %s, got %s", testURL, location)
+			if location != tc.expectedURL {
+				t.Errorf("expected redirect to %s, got %s", tc.expectedURL, location)
 			}
 		})
 	}
