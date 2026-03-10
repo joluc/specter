@@ -138,9 +138,9 @@ func main() {
 		probeAddr            string
 		secureMetrics        bool
 		enableHTTP2          bool
-		logLevel         string
-		logFormat        string
-		shortenerBaseURL string
+		logLevel             string
+		logFormat            string
+		shortenerBaseURL     string
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0",

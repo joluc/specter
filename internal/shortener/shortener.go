@@ -82,7 +82,7 @@ type Shortener struct {
 //
 // Parameters:
 //   - baseURL: The external URL where Specter's shortener is accessible.
-//              Example: "https://specter.mycompany.io"
+//     Example: "https://specter.mycompany.io"
 //
 // Example:
 //
@@ -165,7 +165,11 @@ func (s *Shortener) Expand(shortID string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("gzip reader: %w", err)
 	}
-	defer gzReader.Close()
+	defer func() {
+		if closeErr := gzReader.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("gzip close: %w", closeErr)
+		}
+	}()
 
 	var buf bytes.Buffer
 	if _, err := io.Copy(&buf, gzReader); err != nil {

@@ -268,7 +268,7 @@ func BenchmarkShorten(b *testing.B) {
 	url := "https://logs.example.com/app/data-explorer/discover#?_a=%28discover%3A%28columns%3A%21%28_source%29%29%29"
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = shortener.Shorten(url)
 	}
 }
@@ -284,7 +284,7 @@ func BenchmarkExpand(b *testing.B) {
 	shortID := strings.TrimPrefix(shortened, "https://specter.example.com/s/")
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = shortener.Expand(shortID)
 	}
 }
