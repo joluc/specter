@@ -240,21 +240,12 @@ type ShortenerConfig struct {
 	// Enabled toggles URL shortening. When enabled, URLs exceeding MaxURLLength
 	// are replaced with short redirect links.
 	//
-	// The shortener stores URLs in memory with automatic expiration.
-	// Short links look like: https://specter.mycompany.io/s/abc123
+	// The shortener uses stateless compression (gzip + base64 encoding).
+	// No storage, persistence, or expiration - URLs are encoded directly.
+	// Short links look like: https://specter.mycompany.io/s/H4sIAAAA...
 	//
 	// +kubebuilder:default=false
 	Enabled bool `json:"enabled,omitempty"`
-
-	// BaseURL is the external URL where Specter's shortener endpoint is accessible.
-	// This is typically exposed via an Ingress or LoadBalancer Service.
-	//
-	// Example: "https://specter.mycompany.io"
-	//
-	// The short URLs will be: {BaseURL}/s/{shortId}
-	//
-	// +optional
-	BaseURL string `json:"baseURL,omitempty"`
 
 	// MaxURLLength is the threshold above which URLs are shortened.
 	// URLs shorter than this value are left unchanged to avoid unnecessary redirects.
@@ -267,15 +258,6 @@ type ShortenerConfig struct {
 	// +kubebuilder:default=200
 	// +kubebuilder:validation:Minimum=50
 	MaxURLLength int `json:"maxURLLength,omitempty"`
-
-	// TTL is the time-to-live for shortened URLs in Go duration format.
-	// After this duration, the short URL expires and returns 404.
-	//
-	// Examples: "24h", "168h" (7 days), "720h" (30 days)
-	//
-	// +optional
-	// +kubebuilder:default="168h"
-	TTL string `json:"ttl,omitempty"`
 }
 
 // SpecterConfigStatus defines the observed state of SpecterConfig.
