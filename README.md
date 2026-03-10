@@ -121,9 +121,23 @@ templates:
 spec:
   shortener:
     enabled: true
-    baseURL: "https://specter.mycompany.io"
-    maxURLLength: 200
-    ttl: "168h"
+    maxURLLength: 200  # Only shorten URLs longer than this
+```
+
+Configure the shortener base URL via Helm values:
+
+```yaml
+shortener:
+  enabled: true
+  baseURL: "https://specter.mycompany.io"
+
+ingress:
+  enabled: true
+  hosts:
+    - host: specter.mycompany.io
+      paths:
+        - path: /s
+          pathType: Prefix
 ```
 
 ### Skip Individual Alerts
