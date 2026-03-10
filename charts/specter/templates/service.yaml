@@ -1,0 +1,19 @@
+{{- if .Values.shortener.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "specter.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "specter.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: shortener
+  selector:
+    {{- include "specter.selectorLabels" . | nindent 4 }}
+    control-plane: controller-manager
+{{- end }}

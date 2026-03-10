@@ -22,12 +22,10 @@ controller:
 
 # URL shortener configuration
 shortener:
-  # Enable the URL shortener
+  # Enable the URL shortener (stateless compression-based)
   enabled: false
   # Base URL for short links (required if enabled)
   baseURL: ""
-  # How long shortened URLs remain valid
-  ttl: "168h"
 
 # Metrics configuration
 metrics:
@@ -90,3 +88,25 @@ securityContext:
 rbac:
   # Create RBAC resources
   create: true
+
+# Ingress configuration for shortener redirects
+ingress:
+  # Enable ingress
+  enabled: false
+  # Ingress class name
+  className: ""
+  # Ingress annotations
+  annotations: {}
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  # Ingress hosts
+  hosts:
+    - host: specter.example.com
+      paths:
+        - path: /s
+          pathType: Prefix
+  # TLS configuration
+  tls: []
+    # - secretName: specter-tls
+    #   hosts:
+    #     - specter.example.com
