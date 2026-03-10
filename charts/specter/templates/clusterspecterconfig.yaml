@@ -1,0 +1,35 @@
+{{- if .Values.clusterConfig.enabled }}
+apiVersion: config.joluc.de/v1alpha1
+kind: ClusterSpecterConfig
+metadata:
+  name: {{ .Values.clusterConfig.name }}
+  labels:
+    {{- include "specter.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.clusterConfig.templates }}
+  templates:
+    {{- range $name, $config := .Values.clusterConfig.templates }}
+    {{ $name }}:
+      url: {{ $config.url | quote }}
+      {{- if $config.description }}
+      description: {{ $config.description | quote }}
+      {{- end }}
+      {{- if hasKey $config "enabled" }}
+      enabled: {{ $config.enabled }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+
+  {{- if .Values.clusterConfig.defaultLabels }}
+  defaultLabels:
+    {{- toYaml .Values.clusterConfig.defaultLabels | nindent 4 }}
+  {{- end }}
+
+  {{- if .Values.clusterConfig.shortener }}
+  shortener:
+    enabled: {{ .Values.clusterConfig.shortener.enabled }}
+    {{- if .Values.clusterConfig.shortener.maxURLLength }}
+    maxURLLength: {{ .Values.clusterConfig.shortener.maxURLLength }}
+    {{- end }}
+  {{- end }}
+{{- end }}
