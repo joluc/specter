@@ -21,7 +21,7 @@ Specter automatically generates and injects these URLs into your alerts. When `B
 ### 1. Install with Helm
 
 ```bash
-helm install specter oci://registry-1.docker.io/joluc/specter --version 0.1.0
+helm install specter oci://ghcr.io/joluc/charts/specter --version 0.3.0
 ```
 
 ### 2. Create a ClusterSpecterConfig
@@ -117,6 +117,16 @@ templates:
 
 ### URL Shortening
 
+Specter can dramatically reduce URL length using a **template-based approach** that achieves **91% size reduction** (768 chars → 47-70 chars).
+
+Instead of compressing entire URLs, Specter encodes only the template reference and variable values:
+- **Human-readable**: URLs contain template names (e.g., `/s/logs/...`)
+- **Stateless**: No storage required
+- **Fast**: No compression overhead
+- **Debuggable**: Can inspect short URLs
+
+**Enable in SpecterConfig:**
+
 ```yaml
 spec:
   shortener:
@@ -124,7 +134,7 @@ spec:
     maxURLLength: 200  # Only shorten URLs longer than this
 ```
 
-Configure the shortener base URL via Helm values:
+**Configure via Helm values:**
 
 ```yaml
 shortener:
@@ -139,6 +149,13 @@ ingress:
         - path: /s
           pathType: Prefix
 ```
+
+**Example short URL:**
+```
+https://specter.mycompany.io/s/logs/eyJuYW1lc3BhY2UiOiJtb25pdG9yaW5nIn0
+```
+
+When clicked, Specter looks up the `logs` template in ClusterSpecterConfig, decodes the variables, renders the full URL, and redirects.
 
 ### Skip Individual Alerts
 
